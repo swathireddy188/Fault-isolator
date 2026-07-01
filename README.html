@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Automated Board Fault Isolator — README</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.6;
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 24px 18px 64px;
+    color: #1a1a1a;
+    background: #ffffff;
+  }
+  h1 { font-size: 1.6rem; line-height: 1.25; margin: 0 0 4px; }
+  h2 { font-size: 1.2rem; margin: 32px 0 10px; padding-bottom: 6px;
+       border-bottom: 2px solid #2563eb; color: #1e3a8a; }
+  p { margin: 10px 0; }
+  blockquote {
+    margin: 16px 0; padding: 10px 16px;
+    border-left: 4px solid #2563eb; background: #eef2ff;
+    border-radius: 0 8px 8px 0; font-style: italic;
+  }
+  code {
+    background: #f1f5f9; padding: 2px 6px; border-radius: 5px;
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 0.88em;
+  }
+  pre {
+    background: #0f172a; color: #e2e8f0; padding: 14px 16px;
+    border-radius: 10px; overflow-x: auto; font-size: 0.82rem; line-height: 1.5;
+  }
+  pre code { background: none; padding: 0; color: inherit; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 0.92rem; }
+  th, td { padding: 9px 10px; border: 1px solid #e2e8f0; text-align: left; }
+  th { background: #2563eb; color: #fff; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  .center { text-align: center; }
+  ul { padding-left: 22px; }
+  li { margin: 5px 0; }
+  .tag { display:inline-block; background:#dbeafe; color:#1e3a8a;
+         padding:2px 9px; border-radius:999px; font-size:0.78rem; margin:2px 4px 2px 0; }
+  @media (prefers-color-scheme: dark) {
+    body { background:#0b1020; color:#e5e7eb; }
+    h2 { color:#93c5fd; }
+    blockquote { background:#13203a; }
+    code { background:#1e293b; color:#e5e7eb; }
+    th,td { border-color:#1e293b; }
+    tr:nth-child(even) td { background:#111827; }
+    .tag { background:#1e3a5f; color:#bfdbfe; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Automated Board Fault Isolator</h1>
+<p>A lightweight tool that reads a board's test <strong>reply log</strong> and outputs a
+<strong>ranked list of the components most likely to be faulty</strong> — turning the manual
+fault-isolation reasoning a debug technician does by hand into a repeatable algorithm.</p>
+<p>Built in pure Python (standard library only — nothing to install) as a learning and
+portfolio project. Includes a <strong>virtual board simulator</strong> so the whole pipeline
+can be developed and validated without any hardware.</p>
+
+<h2>The core idea</h2>
+<blockquote>The faulty component is the one the <strong>failing</strong> tests share and the
+<strong>passing</strong> tests never clear.</blockquote>
+<p>Fault isolation is mostly set logic, not AI:</p>
+<pre><code>suspects = (components in failing tests) − (components cleared by passing tests)</code></pre>
+<p>Each suspect is then ranked, with a strong bonus for components that no passing test ever exonerated.</p>
+
+<h2>Measured performance</h2>
+<p>Validated over hundreds of injected-fault trials against the virtual board
+(reproduce with <code>accuracy_test.py</code>):</p>
+<table>
+  <tr><th>Condition</th><th class="center">Correct part in top 3</th><th class="center">Correct part is #1</th></tr>
+  <tr><td>Clean logs</td><td class="center">~100%</td><td class="center">~60%</td></tr>
+  <tr><td>5% measurement noise</td><td class="center">~87%</td><td class="center">~44%</td></tr>
+</table>
+<p>Top-1 is intentionally below 100%: components sharing identical test coverage are
+mathematically indistinguishable by tests alone. The fix is better test <em>coverage
+design</em>, not more code — the accuracy harness reports exactly which parts are ambiguous.</p>
+
+<h2>Quick start</h2>
+<pre><code># isolate faults from a sample log and save the session to a database
+python3 fault_isolator.py
+
+# view saved sessions (SQL query)
+python3 fault_isolator.py history
+
+# run the engine self-test
+python3 fault_isolator.py test
+
+# generate a realistic log by breaking one part
+python3 board_simulator.py R188
+
+# measure isolation accuracy over 500 random faults
+python3 accuracy_test.py 500
+
+# ...with 5% measurement noise
+python3 accuracy_test.py 1000 0.05</code></pre>
+
+<h2>How it works</h2>
+<ul>
+  <li><strong>Coverage matrix</strong> (<code>coverage.csv</code>) — maps each test to the components it exercises. The key asset; it encodes board knowledge.</li>
+  <li><strong>Log parser</strong> — turns a raw reply log into pass/fail per test.</li>
+  <li><strong>Isolation engine</strong> — intersects failing-test coverage, subtracts what passing tests cleared, ranks the survivors.</li>
+  <li><strong>SQLite persistence</strong> — every session is saved, accumulating a labelled (log → faulty component) dataset.</li>
+  <li><strong>Virtual board simulator</strong> — injects a fault and emits a realistic log, enabling a fully software-based validate loop.</li>
+</ul>
+<pre><code>inject fault  →  generate log  →  isolate  →  was the right part found?</code></pre>
+
+<h2>Project structure</h2>
+<pre><code>fault-isolator/
+├── README.md            project overview
+├── BUILD_GUIDE.md       step-by-step build from scratch
+├── coverage.csv         test-to-component coverage matrix (data)
+├── fault_isolator.py    main program: parse → isolate → rank → persist
+├── board_simulator.py   virtual board: inject a fault, emit a reply log
+├── accuracy_test.py     harness: measure top-1 / top-3 accuracy
+├── .gitignore
+└── LICENSE</code></pre>
+
+<h2>Skills demonstrated</h2>
+<p>
+  <span class="tag">Python (classes, modules)</span>
+  <span class="tag">File handling (CSV)</span>
+  <span class="tag">SQL (SQLite)</span>
+  <span class="tag">Testing (assertions)</span>
+  <span class="tag">Board bring-up &amp; fault isolation</span>
+</p>
+
+<h2>Where it goes next</h2>
+<ul>
+  <li>Parse a real test-system log format</li>
+  <li>Generate the coverage matrix from a netlist instead of by hand</li>
+  <li>Add a <strong>fault dictionary</strong> matching whole pass/fail signatures to known faults</li>
+  <li>Train an ML ranker once enough labelled sessions accumulate</li>
+</ul>
+
+<h2>Note</h2>
+<p>Built for learning and demonstration using synthetic sample data. Contains no
+proprietary board designs, test programs, or production logs.</p>
+
+</body>
+</html>

@@ -1,0 +1,12 @@
+# generated database
+*.db
+
+# python caches
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# editor / OS
+.vscode/
+.idea/
+.DS_Store
